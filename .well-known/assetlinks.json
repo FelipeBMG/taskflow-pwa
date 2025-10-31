@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.felipebmg.twa",
+      "sha256_cert_fingerprints": [
+        "75F615328CF9B9AA9BF67696336A1467932DE6055FA655B945897F42D9420CEE"
+      ]
+    }
+  }
+]
