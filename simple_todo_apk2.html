@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskFlow | Produtividade Avançada</title>
+    <!-- Carrega o Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- REQUISITOS PWA (PASSO 1) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <!-- FIM REQUISITOS PWA -->
+    <style>
+        /* FIX: Garante transição suave e usa classes Tailwind para fundo */
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Estilos base para modais e drawers */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Drawer para Mobile (Filtros) */
+        .filter-drawer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 80vh;
+            transform: translateY(100%);
+            transition: transform 0.3s ease-out;
+            border-top-left-radius: 1rem;
+            border-top-right-radius: 1rem;
+            z-index: 60;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+        .filter-drawer.open {
+            transform: translateY(0);
+        }
+
+        /* Estilo para animação de fade-in na tarefa */
+        .task-item {
+            animation: fadeIn 0.3s ease-out;
+            cursor: grab; /* 19. Drag/Drop visual feedback */
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* 11. Estilo para Toast Notifications */
+        #toastContainer {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 70;
+            display: flex;
+            flex-direction: column-reverse; /* Mostra os mais recentes no topo */
+            gap: 0.5rem;
+        }
+        .toast {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            color: white;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        /* 4. Progress Bar */
+        .progress-bar-container {
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            background-color: #e5e7eb;
+        }
+        .progress-bar {
+            height: 100%;
+            transition: width 0.5s ease-out;
+            background-color: #2563eb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 transition duration-300">
+
+    <div class="max-w-xl mx-auto min-h-screen pb-20">
+        <!-- Header Fixo Otimizado para Mobile (Menos elementos) -->
+        <header class="py-4 px-4 sticky top-0 bg-gray-100 dark:bg-gray-900 z-30 shadow-md transition duration-300">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-3xl font-extrabold text-blue-600 dark:text-blue-400">TaskFlow</h1>
+                
+                <!-- Controles do Header -->
+                <div class="flex items-center space-x-3">
+                    <!-- 1. Collapsible Filters Button -->
+                    <button id="openFilterDrawerBtn" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-300 transition duration-300 shadow-sm" aria-label="Abrir Filtros">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M3.792 2.983A1 1 0 014.75 2h14.5c.379 0 .725.214.883.543l4 8a1 1 0 01-.883 1.457H.75a1 1 0 01-.883-1.457l4-8z" clip-rule="evenodd" /><path fill-rule="evenodd" d="M11 20.75a.75.75 0 01.75-.75h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 01-.75-.75zM8 18.25a.75.75 0 01.75-.75h6.5a.75.75 0 010 1.5h-6.5a.75.75 0 01-.75-.75z" clip-rule="evenodd" /></svg>
+                    </button>
+
+                    <!-- Dark Mode Toggle (Revisado para garantir que funciona) -->
+                    <button id="darkModeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-yellow-400 transition duration-300 shadow-sm" aria-label="Alternar Modo Escuro">
+                        <!-- Icone será preenchido pelo JS -->
+                    </button>
+                </div>
+            </div>
+
+            <!-- 4. Progress Bar -->
+            <div id="taskProgressContainer" class="progress-bar-container mt-2">
+                <div id="taskProgressBar" class="progress-bar" style="width: 0%;"></div>
+            </div>
+            <!-- 9. Task Counter Display -->
+            <div id="taskCounter" class="text-xs font-bold text-gray-600 dark:text-gray-400 mt-2 text-right">0 Pendente(s) / 0 Total</div>
+
+        </header>
+        
+        <main id="taskList" class="p-4 space-y-3">
+            <!-- As tarefas serão inseridas aqui pelo JavaScript -->
+        </main>
+
+        <!-- 20. "No Tasks Found" state for filters -->
+        <p id="emptyMessage" class="text-center p-8 rounded-xl shadow-lg mx-4 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hidden">
+            Nenhuma tarefa encontrada. Tente redefinir os filtros ou adicione uma nova com o botão '+'!
+        </p>
+
+    </div>
+
+    <!-- 3. Floating Action Button (FAB) -->
+    <button id="openAddModalBtn" class="fixed bottom-5 right-5 h-14 w-14 rounded-full bg-blue-600 text-white shadow-2xl hover:bg-blue-700 transition duration-300 z-40">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12 3a1 1 0 011 1v7h7a1 1 0 110 2h-7v7a1 1 0 11-2 0v-7H4a1 1 0 110-2h7V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+    </button>
+    
+    <!-- 1. & 2. Collapsible Filter/Sort Drawer -->
+    <div id="filterDrawer" class="filter-drawer bg-white dark:bg-gray-800 shadow-2xl">
+        <div class="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-700 pb-3">
+            <h3 class="text-xl font-bold text-blue-600 dark:text-blue-400">Filtros Avançados e Ações</h3>
+            <button id="closeFilterDrawerBtn" class="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition duration-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <!-- 6. Search & 20. Clear Search -->
+            <div class="relative">
+                <input
+                    id="searchInput"
+                    type="text"
+                    placeholder="Buscar por texto ou notas..."
+                    class="w-full p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-white transition duration-200"
+                    oninput="applyFilters()"
+                />
+                <button id="clearSearchBtn" onclick="clearSearch()" class="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 text-gray-500 dark:text-gray-400 hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <!-- Status Filter -->
+                <select id="filterStatus" class="p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" onchange="applyFilters()">
+                    <option value="all">Status: Todas</option>
+                    <option value="pending">Status: Pendentes</option>
+                    <option value="completed">Status: Concluídas</option>
+                </select>
+                
+                <!-- Priority Filter -->
+                <select id="filterPriority" class="p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" onchange="applyFilters()">
+                    <option value="all">Prioridade: Todas</option>
+                    <option value="high">Prioridade: Alta</option>
+                    <option value="medium">Prioridade: Média</option>
+                    <option value="low">Prioridade: Baixa</option>
+                </select>
+                
+                <!-- 13. Important Filter -->
+                <select id="filterImportant" class="p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" onchange="applyFilters()">
+                    <option value="all">Importância: Todas</option>
+                    <option value="important">Importância: Marcadas</option>
+                </select>
+
+                <!-- 5. Sorting -->
+                <select id="sortOption" class="p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" onchange="applyFilters()">
+                    <option value="priority-desc">Ordenar por: Prioridade (Alta)</option>
+                    <option value="due-asc">Ordenar por: Vencimento (Próximo)</option>
+                    <option value="created-desc">Ordenar por: Criação (Recente)</option>
+                    <option value="completed-desc">14. Conclusão (Recente)</option>
+                </select>
+            </div>
+
+            <!-- Bulk Actions and Data Management -->
+            <div class="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button class="flex-1 p-3 text-sm text-gray-700 dark:text-gray-300 font-semibold bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-200 shadow-sm" onclick="clearCompletedTasks()">
+                    Limpar Concluídas
+                </button>
+                <button class="flex-1 p-3 text-sm text-white font-semibold bg-green-600 rounded-lg hover:bg-green-700 transition duration-200 shadow-md" onclick="markAllTasks(true)">
+                    Concluir Todas
+                </button>
+            </div>
+            
+            <div class="flex gap-3 pt-2">
+                <!-- 15. Export/Backup Button -->
+                <button class="flex-1 p-3 text-sm text-gray-700 dark:text-gray-300 font-semibold bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-200 shadow-sm" onclick="exportTasks()">
+                    Exportar JSON
+                </button>
+                <!-- 16. Import Button -->
+                <input type="file" id="importFile" accept="application/json" class="hidden" onchange="importTasks(event)">
+                <button class="flex-1 p-3 text-sm text-gray-700 dark:text-gray-300 font-semibold bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-200 shadow-sm" onclick="document.getElementById('importFile').click()">
+                    Importar JSON
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modais de Tarefa (Adicionar, Editar, Excluir) -->
+
+    <!-- Modal para Adicionar Nova Tarefa (3. FAB opens this) -->
+    <div id="addModal" class="modal-overlay">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl w-11/12 max-w-md transform scale-100 transition duration-300">
+            <h2 class="text-xl font-bold text-blue-600 dark:text-blue-400 mb-4">Adicionar Nova Tarefa</h2>
+            <form id="addTaskForm" class="space-y-4">
+                <input
+                    id="newTaskText"
+                    type="text"
+                    placeholder="Descrição principal (obrigatório)"
+                    maxlength="100"
+                    class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                    required
+                />
+                <!-- 5. Notes/Description Field -->
+                <div>
+                    <label for="newTaskNotes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notas/Detalhes (Opcional):</label>
+                    <textarea 
+                        id="newTaskNotes" 
+                        rows="3"
+                        placeholder="Adicione notas detalhadas..."
+                        class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                    ></textarea>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <!-- 1. Priority -->
+                    <div>
+                        <label for="newTaskPriority" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Prioridade:</label>
+                        <select id="newTaskPriority" class="w-full p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white">
+                            <option value="medium" selected>Média</option>
+                            <option value="high">Alta</option>
+                            <option value="low">Baixa</option>
+                        </select>
+                    </div>
+                    <!-- 2. Due Date -->
+                    <div>
+                        <label for="newTaskDueDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vencimento:</label>
+                        <input id="newTaskDueDate" type="date" class="w-full p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" />
+                    </div>
+                </div>
+                <!-- 6. Estimated Time -->
+                <div>
+                    <label for="newTaskEstimate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tempo Estimado (ex: 1h30m):</label>
+                    <input id="newTaskEstimate" type="text" placeholder="1h30m ou 45m" class="w-full p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" />
+                </div>
+
+
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button type="button" id="cancelAddBtn" class="py-2 px-4 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-200" onclick="closeModal('addModal')">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="py-2 px-4 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200 shadow-md">
+                        Adicionar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- Modal para Editar Tarefa (7.) -->
+    <div id="editModal" class="modal-overlay">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl w-11/12 max-w-lg transform scale-100 transition duration-300">
+            <h2 class="text-xl font-bold text-blue-600 dark:text-blue-400 mb-4">Editar Tarefa</h2>
+            <form id="editTaskForm" class="space-y-4">
+                <input
+                    id="editTaskText"
+                    type="text"
+                    maxlength="100"
+                    class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white transition duration-200"
+                    required
+                />
+                 <!-- 5. Notes/Description Field -->
+                <div>
+                    <label for="editTaskNotes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notas/Detalhes:</label>
+                    <textarea 
+                        id="editTaskNotes" 
+                        rows="3"
+                        placeholder="Adicione notas detalhadas..."
+                        class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                    ></textarea>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="editTaskPriority" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Prioridade:</label>
+                        <select id="editTaskPriority" class="w-full p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white">
+                            <option value="medium">Média</option>
+                            <option value="high">Alta</option>
+                            <option value="low">Baixa</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="editTaskDueDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vencimento:</label>
+                        <input id="editTaskDueDate" type="date" class="w-full p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" />
+                    </div>
+                </div>
+                 <!-- 6. Estimated Time -->
+                <div>
+                    <label for="editTaskEstimate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tempo Estimado (ex: 1h30m):</label>
+                    <input id="editTaskEstimate" type="text" placeholder="1h30m ou 45m" class="w-full p-3 border rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" />
+                </div>
+
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button type="button" id="cancelEditBtn" class="py-2 px-4 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-200" onclick="closeModal('editModal')">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="py-2 px-4 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200 shadow-md">
+                        Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- Modal para Excluir (8.) -->
+    <div id="deleteModal" class="modal-overlay">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl w-11/12 max-w-sm transform scale-100 transition duration-300">
+            <h2 class="text-xl font-bold text-red-600 mb-4">Confirmar Exclusão</h2>
+            <p id="modalMessage" class="text-gray-700 dark:text-gray-300 mb-6">Tem certeza de que deseja excluir esta tarefa?</p>
+            <div class="flex justify-end space-x-3">
+                <button id="cancelDeleteBtn" class="py-2 px-4 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-200" onclick="closeModal('deleteModal')">
+                    Cancelar
+                </button>
+                <button id="confirmDeleteBtn" class="py-2 px-4 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition duration-200 shadow-md">
+                    Excluir
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 11. Toast Notifications Container -->
+    <div id="toastContainer"></div>
+
+
+    <script>
+        // --- Constantes e Variáveis Globais ---
+        const TASK_STORAGE_KEY = 'advancedMobileTasksV2';
+        const DARK_MODE_KEY = 'darkModeEnabled';
+        const FILTER_STORAGE_KEY = 'taskFiltersV2';
+
+        let tasks = [];
+        let taskToDeleteId = null;
+        let taskToEditId = null;
+        let dragSrcEl = null; // 19. Drag/Drop
+
+        // --- Elementos DOM (Principais) ---
+        const taskList = document.getElementById('taskList');
+        const emptyMessage = document.getElementById('emptyMessage');
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const taskCounter = document.getElementById('taskCounter');
+        const taskProgressBar = document.getElementById('taskProgressBar');
+        
+        // Modais/Drawers
+        const addModal = document.getElementById('addModal');
+        const editModal = document.getElementById('editModal');
+        const deleteModal = document.getElementById('deleteModal');
+        const filterDrawer = document.getElementById('filterDrawer');
+        
+        // Forms e Inputs
+        const addTaskForm = document.getElementById('addTaskForm');
+        const editTaskForm = document.getElementById('editTaskForm');
+        const searchInput = document.getElementById('searchInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        const filterStatus = document.getElementById('filterStatus');
+        const filterPriority = document.getElementById('filterPriority');
+        const filterImportant = document.getElementById('filterImportant');
+        const sortOption = document.getElementById('sortOption');
+
+
+        // --- Funções de Utilitário ---
+
+        const saveTasks = () => {
+            localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks));
+            updateTaskCounter();
+        };
+
+        const loadTasks = () => {
+            const stored = localStorage.getItem(TASK_STORAGE_KEY);
+            if (stored) {
+                tasks = JSON.parse(stored);
+            }
+        };
+
+        const loadFilters = () => {
+            const storedFilters = localStorage.getItem(FILTER_STORAGE_KEY);
+            if (storedFilters) {
+                const filters = JSON.parse(storedFilters);
+                searchInput.value = filters.search || '';
+                filterStatus.value = filters.status || 'all';
+                filterPriority.value = filters.priority || 'all';
+                filterImportant.value = filters.important || 'all';
+                sortOption.value = filters.sort || 'priority-desc';
+                
+                // 20. Exibe o botão de limpar busca se houver texto
+                searchInput.value.length > 0 ? clearSearchBtn.classList.remove('hidden') : clearSearchBtn.classList.add('hidden');
+            }
+        };
+
+        const saveFilters = () => {
+            const filters = {
+                search: searchInput.value,
+                status: filterStatus.value,
+                priority: filterPriority.value,
+                important: filterImportant.value,
+                sort: sortOption.value
+            };
+            localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
+        };
+        
+        const closeModal = (id) => {
+             document.getElementById(id).classList.remove('open');
+        };
+
+        // 11. Custom Toast Notification
+        const showToast = (message, type = 'info') => {
+            const toastContainer = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            let bgColor = 'bg-blue-500';
+            if (type === 'success') bgColor = 'bg-green-600';
+            if (type === 'error') bgColor = 'bg-red-600';
+            
+            toast.className = `toast ${bgColor}`;
+            toast.textContent = message;
+            
+            toastContainer.appendChild(toast);
+            
+            // Animação de entrada
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            // Animação de saída e remoção
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        };
+
+        // --- Correção e Melhoria do Dark Mode ---
+        const loadDarkMode = () => {
+            const isDark = localStorage.getItem(DARK_MODE_KEY) === 'true';
+            document.documentElement.classList.toggle('dark', isDark);
+            
+            // Atualiza o ícone
+            const iconHTML = isDark
+                ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M9.593 2.768a.75.75 0 01-.78-.172l-1.614-1.4a.75.75 0 01.996-1.144l.872.756.772-.772a.75.75 0 011.06 1.06l-.772.772.756.872a.75.75 0 01-.172.78zM12 7.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9z" /></svg>' // Sun
+                : '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.847 4.75a.75.75 0 00-1.061 0l-1.59 1.59a.75.75 0 101.06 1.06l1.59-1.59a.75.75 0 000-1.06zm-15.094 0a.75.75 0 000 1.06l1.59 1.59a.75.75 0 001.06-1.06L5.813 4.75a.75.75 0 00-1.06 0zm11.778 15.688a.75.75 0 001.061 0l1.59-1.59a.75.75 0 10-1.06-1.06l-1.59 1.59a.75.75 0 000 1.06zM3.864 18.847a.75.75 0 001.06 0l1.59-1.59a.75.75 0 10-1.06-1.06l-1.59 1.59a.75.75 0 000 1.06zM12 6a.75.75 0 01.75.75V9a.75.75 0 01-1.5 0V6.75A.75.75 0 0112 6zm6.75 14.25a.75.75 0 000-1.5h-2.25a.75.75 0 000 1.5h2.25zM3 20.25a.75.75 0 010-1.5h2.25a.75.75 0 010 1.5H3z" /></svg>'; // Moon
+            darkModeToggle.innerHTML = iconHTML;
+
+            // Re-renderizar tarefas para aplicar cores de dark mode se necessário
+            applyFilters();
+        };
+
+        // --- Contadores e Progresso (4. Progress Bar & 9. Counter) ---
+
+        const updateTaskCounter = () => {
+            const pending = tasks.filter(t => !t.completed).length;
+            const total = tasks.length;
+            taskCounter.textContent = `${pending} Pendente(s) / ${total} Total`;
+            
+            // 4. Progress Bar Logic
+            const percentage = total === 0 ? 0 : Math.round(((total - pending) / total) * 100);
+            taskProgressBar.style.width = `${percentage}%`;
+
+            updateEmptyMessage(total === 0);
+        };
+
+        const updateEmptyMessage = (listEmpty) => {
+             // Esconde/Mostra o container de progresso se não houver tarefas
+            document.getElementById('taskProgressContainer').classList.toggle('hidden', tasks.length === 0);
+
+            if (tasks.length === 0) {
+                emptyMessage.textContent = 'Nenhuma tarefa encontrada. Adicione uma nova com o botão \'+\'!';
+                emptyMessage.classList.remove('hidden');
+                return;
+            }
+
+            // Se a lista filtrada estiver vazia
+            if (listEmpty) {
+                emptyMessage.textContent = 'Nenhuma tarefa corresponde aos filtros atuais. Tente redefini-los!';
+                emptyMessage.classList.remove('hidden');
+            } else {
+                emptyMessage.classList.add('hidden');
+            }
+        };
+
+
+        // --- Lógica de Filtragem e Ordenação (5, 6, 12, 13, 14) ---
+
+        const applyFilters = () => {
+            saveFilters();
+
+            let filteredTasks = [...tasks];
+            const search = searchInput.value.toLowerCase();
+            const statusFilter = filterStatus.value;
+            const priorityFilter = filterPriority.value;
+            const importantFilter = filterImportant.value;
+            const sortMethod = sortOption.value;
+
+            // 20. Show/Hide clear search button
+            searchInput.value.length > 0 ? clearSearchBtn.classList.remove('hidden') : clearSearchBtn.classList.add('hidden');
+
+
+            // 6. & 12. Filtragem por busca (texto principal OU notas)
+            if (search) {
+                filteredTasks = filteredTasks.filter(task =>
+                    task.text.toLowerCase().includes(search) || 
+                    (task.notes && task.notes.toLowerCase().includes(search))
+                );
+            }
+
+            // 3. Filtragem por status
+            if (statusFilter !== 'all') {
+                const isCompleted = statusFilter === 'completed';
+                filteredTasks = filteredTasks.filter(task => task.completed === isCompleted);
+            }
+
+            // 4. Filtragem por prioridade
+            if (priorityFilter !== 'all') {
+                filteredTasks = filteredTasks.filter(task => task.priority === priorityFilter);
+            }
+
+            // 13. Filtragem por importante
+            if (importantFilter === 'important') {
+                filteredTasks = filteredTasks.filter(task => task.isImportant);
+            }
+
+            // 5. & 14. Ordenação
+            filteredTasks.sort((a, b) => {
+                const [field, direction] = sortMethod.split('-');
+                let comparison = 0;
+
+                const priorityOrder = { 'high': 3, 'medium': 2, 'low': 1 };
+                
+                if (field === 'priority') {
+                    comparison = priorityOrder[b.priority] - priorityOrder[a.priority];
+                } else if (field === 'due') {
+                    const dateA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+                    const dateB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+                    comparison = dateA - dateB;
+                } else if (field === 'created') {
+                    comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                } 
+                 // 14. Sort by Completion Date
+                 else if (field === 'completed') {
+                    const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+                    const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+                    comparison = dateB - dateA; // Mais recente primeiro
+                 }
+
+                // Coloca tarefas não concluídas antes das concluídas
+                if (a.completed !== b.completed) {
+                    return a.completed ? 1 : -1;
+                }
+                
+                // Coloca tarefas importantes no topo
+                if (a.isImportant !== b.isImportant) {
+                    return a.isImportant ? -1 : 1;
+                }
+
+                return direction === 'asc' ? comparison : -comparison;
+            });
+
+            renderTasks(filteredTasks);
+        };
+
+        // 20. Clear Search Helper
+        window.clearSearch = () => {
+            searchInput.value = '';
+            applyFilters();
+        };
+
+        // --- Renderização Principal ---
+
+        const getPriorityColor = (priority) => {
+            // 17. Use classes de borda e fundo consistentes para dark/light mode
+            switch (priority) {
+                case 'high': return 'border-red-500 dark:border-red-400 bg-red-50 dark:bg-red-900/40';
+                case 'medium': return 'border-yellow-500 dark:border-yellow-400 bg-yellow-50 dark:bg-yellow-900/40';
+                case 'low': return 'border-green-500 dark:border-green-400 bg-green-50 dark:bg-green-900/40';
+                default: return 'border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800';
+            }
+        };
+        
+        const getPriorityIcon = (priority) => {
+            // 17. Better Priority Indicators (Unicode)
+             switch (priority) {
+                case 'high': return '🔥';
+                case 'medium': return '⚠️';
+                case 'low': return '✨';
+                default: return '●';
+            }
+        };
+
+        const renderTasks = (filteredList) => {
+            taskList.innerHTML = ''; 
+            const list = filteredList || tasks;
+
+            if (list.length === 0) {
+                updateEmptyMessage(true);
+                return;
+            }
+
+            list.forEach(task => {
+                const taskElement = document.createElement('div');
+                taskElement.dataset.taskId = task.id;
+                taskElement.draggable = true; // 19. Enable Drag/Drop
+
+                const priorityColorClasses = getPriorityColor(task.priority);
+                
+                // Task Item Class Structure (Mobile first, vertical stack)
+                const baseClasses = 'task-item flex flex-col p-4 rounded-xl shadow-lg transition duration-200 border-l-4 border-r-4 hover:shadow-xl hover:scale-[1.01]';
+                const statusClasses = task.completed
+                    ? 'bg-gray-200 dark:bg-gray-700 opacity-70 border-l-green-600 border-r-green-600' // 13. Completion checkmark border
+                    : `border-l-blue-600 border-r-blue-600 ${priorityColorClasses}`; // Dynamic color by priority
+
+                taskElement.className = `${baseClasses} ${statusClasses}`;
+
+                const taskTextClasses = task.completed 
+                    ? 'line-through text-gray-500 dark:text-gray-400' 
+                    : 'text-gray-800 dark:text-gray-100';
+
+                const dueDateDisplay = task.dueDate ? new Date(task.dueDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : 'Sem Data';
+                const dateCreated = new Date(task.createdAt).toLocaleDateString('pt-BR');
+                const completionDisplay = task.completedAt ? new Date(task.completedAt).toLocaleDateString('pt-BR') : '';
+
+                // 13. Alerta de Vencimento
+                const isOverdue = task.dueDate && new Date(task.dueDate) < new Date().setHours(0,0,0,0) && !task.completed;
+                const overdueClasses = isOverdue ? 'text-red-600 dark:text-red-400 font-bold' : '';
+
+
+                // Conteúdo HTML do item
+                taskElement.innerHTML = `
+                    <div class="flex items-start justify-between w-full">
+                        <!-- Checkbox, Star & Title -->
+                        <div class="flex items-start flex-grow min-w-0 pr-4">
+                            <input
+                                type="checkbox"
+                                class="mt-1 h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer flex-shrink-0"
+                                ${task.completed ? 'checked' : ''}
+                                onchange="window.toggleCompletion('${task.id}')"
+                            />
+                            
+                            <!-- 10. Important/Star Toggle -->
+                            <button 
+                                onclick="event.stopPropagation(); window.toggleImportant('${task.id}')"
+                                class="ml-2 p-1 rounded-full text-lg transition duration-200 ${task.isImportant ? 'text-yellow-400 hover:text-yellow-500' : 'text-gray-400 dark:text-gray-600 hover:text-yellow-400'}"
+                                aria-label="Marcar como importante"
+                            >
+                                ${task.isImportant ? '⭐' : '☆'}
+                            </button>
+
+                            <div class="ml-3 flex-grow min-w-0">
+                                <span class="text-base break-words font-semibold ${taskTextClasses}">
+                                    ${task.text}
+                                </span>
+                                <!-- Sub-info (Prioridade + Vencimento) -->
+                                <div class="flex text-xs mt-1 text-gray-500 dark:text-gray-400 space-x-3">
+                                    <span class="font-medium capitalize flex items-center">
+                                        ${getPriorityIcon(task.priority)} P: ${task.priority === 'high' ? 'Alta' : task.priority === 'medium' ? 'Média' : 'Baixa'}
+                                    </span>
+                                    <span class="${overdueClasses}">
+                                        Vence: ${dueDateDisplay}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Ações Rápidas (Editar/Excluir) -->
+                        <div class="flex space-x-1 flex-shrink-0">
+                             <button
+                                onclick="window.openEditModal('${task.id}')"
+                                class="p-2 text-blue-500 hover:text-blue-700 transition duration-150 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900 flex-shrink-0"
+                                aria-label="Editar Tarefa"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zm-8.87 8.87l-.547 2.112 1.956.842.547-2.112-1.956-.842z" /><path fill-rule="evenodd" d="M10 2a1 1 0 00-1 1v1h2V3a1 1 0 00-1-1zM4 6a1 1 0 011-1h10a1 1 0 011 1v10a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm2 10a1 1 0 102 0v-4a1 1 0 10-2 0v4zm4-4a1 1 0 100-2 1 1 0 000 2zm2 2a1 1 0 10-2 0v4a1 1 0 102 0v-4z" clip-rule="evenodd" /></svg>
+                            </button>
+                            <button
+                                onclick="window.showDeleteModal('${task.id}')"
+                                class="p-2 text-red-500 hover:text-red-700 transition duration-150 rounded-full hover:bg-red-100 dark:hover:bg-red-900 flex-shrink-0"
+                                aria-label="Excluir Tarefa"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 100 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. Collapsible Details (Notes, Creation/Estimate) -->
+                    <div id="details-${task.id}" class="w-full mt-3 pt-3 border-t border-gray-300 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 transition-all duration-300 ${task.notes || task.estimateTime || task.completedAt ? '' : 'hidden'}">
+                        ${task.notes ? `<p class="mb-2 italic border-l-2 border-blue-400 pl-2">${task.notes}</p>` : ''}
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                             <p>Criada: ${dateCreated}</p>
+                             ${task.estimateTime ? `<p>Est. Tempo: ${task.estimateTime}</p>` : ''} 
+                             ${task.completed ? `<p>Concluída: ${completionDisplay}</p>` : ''}
+                        </div>
+                        <!-- 8. Duplicate Button -->
+                        <button onclick="window.duplicateTask('${task.id}')" class="mt-2 text-blue-500 text-xs font-medium hover:underline">
+                            Duplicar Tarefa
+                        </button>
+                    </div>
+                `;
+                
+                // 2. Clickable task body to expand/collapse details (only if details exist)
+                const detailsSection = taskElement.querySelector(`#details-${task.id}`);
+                if (detailsSection.innerHTML.trim() !== `<p>Criada: ${dateCreated}</p><div class="flex space-x-2 text-xs"></div><!-- 8. Duplicate Button --><button onclick="window.duplicateTask('${task.id}')" class="mt-2 text-blue-500 text-xs font-medium hover:underline">Duplicar Tarefa</button>`) {
+                    taskElement.addEventListener('click', (e) => {
+                        // Evita que o clique no checkbox ou botões feche o card
+                        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                            return;
+                        }
+                        detailsSection.classList.toggle('hidden');
+                    });
+                }
+                
+                taskList.appendChild(taskElement);
+            });
+
+            updateEmptyMessage(list.length === 0);
+        };
+
+        // --- Funções Globais de Ação ---
+
+        // 9. Toggle Completion (now handles completion date)
+        window.toggleCompletion = (id) => {
+            const now = new Date().toISOString().split('T')[0];
+            tasks = tasks.map(task => {
+                if (task.id === id) {
+                    const isNowCompleted = !task.completed;
+                    showToast(isNowCompleted ? `🎉 Tarefa '${task.text.substring(0, 20)}...' concluída!` : `↩️ Tarefa restaurada.`, 'success');
+                    return { 
+                        ...task, 
+                        completed: isNowCompleted, 
+                        completedAt: isNowCompleted ? now : null // 7. Record Completion Date
+                    };
+                }
+                return task;
+            });
+            saveTasks();
+            applyFilters();
+        };
+        
+        // 10. Toggle Important
+        window.toggleImportant = (id) => {
+             tasks = tasks.map(task => {
+                if (task.id === id) {
+                    showToast(task.isImportant ? `🌟 Removida de importantes.` : `⭐ Marcada como importante!`, 'info');
+                    return { ...task, isImportant: !task.isImportant };
+                }
+                return task;
+            });
+            saveTasks();
+            applyFilters();
+        };
+        
+        // 8. Duplicate Task
+        window.duplicateTask = (id) => {
+            const task = tasks.find(t => t.id === id);
+            if (task) {
+                const newTask = {
+                    ...task,
+                    id: Date.now().toString(),
+                    text: `Cópia de: ${task.text}`,
+                    completed: false,
+                    isImportant: false,
+                    createdAt: new Date().toISOString().split('T')[0],
+                    completedAt: null
+                };
+                tasks.push(newTask);
+                saveTasks();
+                applyFilters();
+                showToast(`♻️ Tarefa duplicada: ${newTask.text.substring(0, 20)}...`, 'info');
+            }
+        };
+
+
+        // 8. Delete Confirmation Modal Logic
+        window.showDeleteModal = (id) => {
+            taskToDeleteId = id;
+            deleteModal.classList.add('open');
+        };
+
+        document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
+            if (taskToDeleteId) {
+                const deletedTask = tasks.find(t => t.id === taskToDeleteId);
+                tasks = tasks.filter(task => task.id !== taskToDeleteId);
+                saveTasks();
+                applyFilters();
+                showToast(`🗑️ Tarefa excluída: ${deletedTask.text.substring(0, 20)}...`, 'error');
+                taskToDeleteId = null;
+            }
+            closeModal('deleteModal');
+        });
+
+        // 7. Edit Modal Logic
+        window.openEditModal = (id) => {
+            const task = tasks.find(t => t.id === id);
+            if (!task) return;
+
+            taskToEditId = id;
+            document.getElementById('editTaskText').value = task.text;
+            document.getElementById('editTaskPriority').value = task.priority;
+            document.getElementById('editTaskDueDate').value = task.dueDate || '';
+            document.getElementById('editTaskNotes').value = task.notes || ''; // 5. Notes
+            document.getElementById('editTaskEstimate').value = task.estimateTime || ''; // 6. Estimate
+            
+            editModal.classList.add('open');
+        };
+
+        editTaskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newText = document.getElementById('editTaskText').value.trim();
+            const newPriority = document.getElementById('editTaskPriority').value;
+            const newDueDate = document.getElementById('editTaskDueDate').value;
+            const newNotes = document.getElementById('editTaskNotes').value.trim(); // 5. Notes
+            const newEstimate = document.getElementById('editTaskEstimate').value.trim(); // 6. Estimate
+
+            if (newText && taskToEditId) {
+                tasks = tasks.map(task =>
+                    task.id === taskToEditId ? { 
+                        ...task, 
+                        text: newText,
+                        priority: newPriority,
+                        dueDate: newDueDate,
+                        notes: newNotes,
+                        estimateTime: newEstimate
+                    } : task
+                );
+                saveTasks();
+                applyFilters();
+                showToast(`✏️ Tarefa editada: ${newText.substring(0, 20)}...`, 'info');
+                taskToEditId = null;
+                closeModal('editModal');
+            } else {
+                showToast('A descrição da tarefa é obrigatória.', 'error');
+            }
+        });
+
+        // --- Event Listeners para Modais e Drawers ---
+        
+        // Open Add Modal
+        document.getElementById('openAddModalBtn').addEventListener('click', () => {
+             // Reset form before opening
+            addTaskForm.reset(); 
+            // 21. Default to today for due date
+            document.getElementById('newTaskDueDate').value = new Date().toISOString().split('T')[0];
+            addModal.classList.add('open');
+        });
+        
+        // Close Modals
+        document.querySelectorAll('.modal-overlay').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                // Fechar se clicar no overlay, mas não no conteúdo do modal
+                if (e.target === modal) {
+                    modal.classList.remove('open');
+                }
+            });
+        });
+        
+        // Open/Close Filter Drawer (1.)
+        document.getElementById('openFilterDrawerBtn').addEventListener('click', () => {
+            filterDrawer.classList.add('open');
+        });
+        document.getElementById('closeFilterDrawerBtn').addEventListener('click', () => {
+            filterDrawer.classList.remove('open');
+        });
+
+
+        // Add Task Logic
+        addTaskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = document.getElementById('newTaskText').value.trim();
+            const priority = document.getElementById('newTaskPriority').value;
+            const dueDate = document.getElementById('newTaskDueDate').value;
+            const notes = document.getElementById('newTaskNotes').value.trim();
+            const estimateTime = document.getElementById('newTaskEstimate').value.trim();
+
+            if (text) {
+                const newTask = {
+                    id: Date.now().toString(),
+                    text: text,
+                    completed: false,
+                    isImportant: false, // 10. Important
+                    priority: priority,
+                    dueDate: dueDate,
+                    notes: notes, // 5. Notes
+                    estimateTime: estimateTime, // 6. Estimate
+                    createdAt: new Date().toISOString().split('T')[0],
+                    completedAt: null
+                };
+                tasks.push(newTask);
+                saveTasks();
+                applyFilters();
+                showToast(`✅ Tarefa adicionada: ${text.substring(0, 20)}...`, 'success');
+                closeModal('addModal');
+            } else {
+                showToast('A descrição da tarefa é obrigatória.', 'error');
+            }
+        });
+        
+        // Dark Mode Toggle
+        darkModeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem(DARK_MODE_KEY, !isDark);
+            loadDarkMode();
+        });
+
+
+        // --- Ações em Massa e Data Management ---
+
+        window.clearCompletedTasks = () => {
+            tasks = tasks.filter(t => !t.completed);
+            saveTasks();
+            applyFilters();
+            showToast('🗑️ Tarefas concluídas limpas.', 'error');
+        };
+
+        window.markAllTasks = (isComplete) => {
+            const now = isComplete ? new Date().toISOString().split('T')[0] : null;
+            tasks = tasks.map(t => ({ 
+                ...t, 
+                completed: isComplete,
+                completedAt: now // 7. Record Completion Date on bulk action
+            }));
+            saveTasks();
+            applyFilters();
+            showToast(isComplete ? '🏁 Todas as tarefas marcadas como concluídas!' : '🔄 Todas as tarefas restauradas!', 'success');
+        };
+
+        // 15. Export Tasks
+        window.exportTasks = () => {
+            try {
+                const dataStr = JSON.stringify(tasks, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `taskflow_backup_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('💾 Backup exportado com sucesso!', 'success');
+            } catch (e) {
+                showToast('Erro ao exportar tarefas.', 'error');
+            }
+        };
+
+        // 16. Import Tasks
+        window.importTasks = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedTasks = JSON.parse(e.target.result);
+                    if (Array.isArray(importedTasks) && importedTasks.every(t => t.text && t.id)) {
+                        tasks = importedTasks; // Substitui as tarefas atuais
+                        saveTasks();
+                        applyFilters();
+                        showToast(`⬆️ ${importedTasks.length} tarefas importadas com sucesso!`, 'success');
+                    } else {
+                        throw new Error('Formato de arquivo inválido.');
+                    }
+                } catch (error) {
+                    showToast(`Erro na importação: ${error.message}`, 'error');
+                }
+            };
+            reader.readAsText(file);
+        };
+
+        // --- 19. Drag and Drop Reordering Logic ---
+        function handleDragStart(e) {
+            this.style.opacity = '0.4';
+            dragSrcEl = this;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.dataset.taskId);
+        }
+
+        function handleDragOver(e) {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function handleDragEnter(e) {
+            this.classList.add('shadow-xl', 'ring-2', 'ring-blue-500');
+        }
+
+        function handleDragLeave(e) {
+            this.classList.remove('shadow-xl', 'ring-2', 'ring-blue-500');
+        }
+
+        function handleDrop(e) {
+            e.stopPropagation(); 
+            this.classList.remove('shadow-xl', 'ring-2', 'ring-blue-500');
+
+            if (dragSrcEl !== this) {
+                const sourceId = dragSrcEl.dataset.taskId;
+                const targetId = this.dataset.taskId;
+
+                // Move task in the array
+                const sourceIndex = tasks.findIndex(t => t.id === sourceId);
+                const targetIndex = tasks.findIndex(t => t.id === targetId);
+
+                if (sourceIndex > -1 && targetIndex > -1) {
+                    const [draggedTask] = tasks.splice(sourceIndex, 1);
+                    tasks.splice(targetIndex, 0, draggedTask);
+                    saveTasks();
+                    applyFilters(); // Re-renderiza para refletir a nova ordem
+                    showToast('🔃 Tarefa reordenada com sucesso.', 'info');
+                }
+            }
+            return false;
+        }
+
+        function handleDragEnd(e) {
+            this.style.opacity = '1';
+            document.querySelectorAll('.task-item').forEach(item => {
+                item.classList.remove('shadow-xl', 'ring-2', 'ring-blue-500');
+            });
+        }
+
+        // Apply Drag/Drop listeners
+        const addDnDListeners = (element) => {
+            element.addEventListener('dragstart', handleDragStart, false);
+            element.addEventListener('dragenter', handleDragEnter, false);
+            element.addEventListener('dragover', handleDragOver, false);
+            element.addEventListener('dragleave', handleDragLeave, false);
+            element.addEventListener('drop', handleDrop, false);
+            element.addEventListener('dragend', handleDragEnd, false);
+        };
+
+        // --- Inicialização e PWA (23.) ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTasks();
+            loadFilters();
+            loadDarkMode();
+            updateTaskCounter();
+            applyFilters(); 
+            
+            // Adiciona listeners de Drag/Drop aos itens existentes
+            document.querySelectorAll('.task-item').forEach(addDnDListeners);
+            
+            // MutationObserver para aplicar DnD em novas tarefas dinamicamente
+            const observer = new MutationObserver((mutationsList, observer) => {
+                for(const mutation of mutationsList) {
+                    if (mutation.type === 'childList') {
+                        mutation.addedNodes.forEach(node => {
+                            if (node.nodeType === 1 && node.classList.contains('task-item')) {
+                                addDnDListeners(node);
+                            }
+                        });
+                    }
+                }
+            });
+
+            // Começa a observar a lista de tarefas para novas adições
+            observer.observe(taskList, { childList: true });
+
+            // 23. PWA Service Worker Registration
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    // O escopo '/' permite que o Service Worker controle toda a aplicação.
+                    navigator.serviceWorker.register('/service-worker.js')
+                        .then(registration => {
+                            console.log('Service Worker registrado com sucesso:', registration.scope);
+                        })
+                        .catch(error => {
+                            console.log('Falha no registro do Service Worker:', error);
+                        });
+                });
+            }
+        });
+    </script>
+</body>
+</html>
